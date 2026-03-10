@@ -1,262 +1,383 @@
-# Swimlane-LR Diagram — Syntax Specification
-> Reference document for implementing the `swimlane-lr` diagram type as a Mermaid fork.
-> Covers: grammar, node shapes, lane declarations, edges, colors, and layout hints.
----
-## 1. Diagram Declaration
-Every diagram begins with `swimlane-lr`. This is the keyword the parser uses to identify the diagram type.
+# Swimlane-LR Mermaid Extension Specification (v1)
 
+> Reference specification for implementing `swimlane-lr` as a Mermaid diagram type backed by ELK.
+
+## 1. Scope
+
+`swimlane-lr` is a Mermaid extension for large, left-to-right, cross-functional process diagrams.
+
+V1 includes:
+
+- horizontal swimlanes
+- Mermaid-compatible node declarations
+- directed solid and dashed edges
+- optional lane fills
+- optional node ordering hints within a lane
+- optional edge port-side routing hints
+- Mermaid `classDef` node styling
+- ELK-based layout and routing
+- large-canvas viewer requirements
+
+V1 does not include:
+
+- notes or sticky annotations
+- dashed group containers or arbitrary subgraphs
+- vertical phases or explicit column modeling
+- manual coordinates
+- explicit edge waypoints
+- general collapsible subgraphs
+
+If the implementation ships from a Mermaid fork, it must still behave as a Mermaid diagram module with Mermaid parsing, config, theming, and render lifecycle.
+
+## 2. Authoring Model
+
+- The diagram declaration is `swimlane-lr`.
+- Lanes are horizontal bands. Declaration order is render order from top to bottom.
+- Flow direction is left to right.
+- Every node belongs to exactly one lane.
+- Cross-lane edges are allowed.
+- ELK computes all node positions, lane extents, and edge paths.
+- Authors may influence layout with relative ordering and port-side hints, but may not set absolute coordinates.
+
+## 3. Syntax
+
+### 3.1 Diagram Declaration
+
+Every diagram starts with:
+
+```text
 swimlane-lr
+```
 
----
-## 2. Lane Declaration
-Lanes are horizontal bands. They are declared in top-to-bottom order. Lane label is a single word or quoted string. Background color is optional and defaults to `#ffffff`.
+### 3.2 Lane Blocks
 
-lane <LaneName> [#hexcolor]
-lane <"Lane Name With Spaces"> [#hexcolor]
+Lane blocks are explicit. Indentation is optional and has no semantic meaning.
 
-### Examples
+```text
+lane Intake fill:#f5f7ff
+  A([Start])
+  B[Collect request]
+end
+```
 
-lane Car
-lane Fun #f0f4ff
-lane Sales #fff7e6
-lane Constr #f0fff4
-lane "Legal Dept" #fff0f0
+Rules:
 
-### Rules
-- Lane order in the source = top-to-bottom render order.
-- Lane height is **auto-sized** by the layout engine (ELK) to fit the tallest node in that lane.
-- Lane label renders as rotated or left-aligned text on the left edge of the band.
-- If no color is given, defaults to white (`#ffffff`).
----
-## 3. Node Declaration
-Nodes are declared **inside** a lane block. They are automatically assigned to the lane they are declared in.
-### 3.1 Shapes
-| Shape | Syntax | Use |
-|---|---|---|
-| Rectangle | `ID[label]` | Process step |
-| Diamond | `ID{label}` | Decision (max 2 outgoing edges) |
-| Circle | `ID((label))` | End / terminal event |
-| Stadium | `ID([label])` | Start event (optional) |
-### 3.2 Multi-line Labels
-Use `\n` inside the label string to force a line break. The shape automatically expands to fit.
+- `lane <lane-ref> [fill:<hex>]` starts a lane block.
+- `end` closes the current lane block.
+- `<lane-ref>` is either a bare identifier or a quoted string.
+- The lane reference is also the lane display label and the key used by `order` and `collapsedLanes`.
+- Lane references must be unique.
+- If `fill:` is omitted, the lane uses the diagram's default lane fill.
 
-ID[First line\nSecond line\nThird line]
-ID{Is condition met?\nReview required?}
+Examples:
 
-### 3.3 Node Styling via classDef
-Nodes can be styled using Mermaid's existing `classDef` and `:::` mechanism.
+```text
+lane Sales fill:#fff7e6
+  A[Receive request]
+end
 
-classDef <className> fill:<color>, stroke:<color>, color:<color>
+lane "Legal Dept" fill:#fff0f0
+  B{Approved?}
+end
+```
 
-Apply to a node:
+### 3.3 Nodes
 
-ID[label]:::className
+Nodes use Mermaid-compatible flowchart shapes and must be declared inside a lane block.
 
-`classDef` declarations can appear anywhere at the top level of the diagram (before or after lane blocks).
----
-## 4. Edge Declaration
-Edges (arrows) can be declared **inside** a lane block or **at the top level**. Because many edges cross lanes, top-level edge declarations are recommended for cross-lane connections.
-### 4.1 Edge Styles
-| Style | Syntax | Renders as |
-|---|---|---|
-| Solid arrow | `A --> B` | Solid line, filled arrowhead |
-| Dashed arrow | `A -.-> B` | Dashed line, filled arrowhead |
-### 4.2 Edge Labels
-Labels are placed in quotes between the arrow tokens.
+| Shape | Syntax | Typical use |
+| --- | --- | --- |
+| Rectangle | `ID[Label]` | Process step |
+| Diamond | `ID{Label}` | Decision |
+| Circle | `ID((Label))` | Terminal |
+| Stadium | `ID([Label])` | Start or entry |
 
-A -- "label text" --> B
-A -.- "label text" -> B
+Rules:
 
-Multi-line edge labels: use `\n` inside the quoted string.
+- Node IDs must be unique across the whole diagram.
+- Labels may use Mermaid text forms, including quoted text where Mermaid allows it.
+- Labels auto-wrap at `swimlaneLr.wrapWidth`.
+- Explicit line breaks override auto-wrapping.
+- Nodes may use Mermaid `:::` class assignment.
 
-A -- "Yes but this is\na long label" --> B
+Examples:
 
-### 4.3 Edge Colors
-An optional `[#hexcolor]` token can be inserted to color the edge line and arrowhead.
+```text
+A[Collect customer input]
+B{Needs legal review?}
+C((Done))
+D([Start]):::entry
+```
 
-%% Solid, colored
-A --[#ff0000]--> B
-%% Dashed, colored
-A -.-[#0055ff]-> B
-%% Solid, colored, with label
-A --[#00aa00]"Yes path"--> B
-%% Dashed, colored, with label
-A -.-[#888888]"Async call"-> B
+### 3.4 Edges
 
-If `[#hexcolor]` is omitted, the edge falls back to the theme default color.
-### 4.4 Chained Edges
-Multiple nodes can be chained in one statement.
+V1 supports Mermaid-style directed edges:
 
-A --> B --> C --> D
+- solid: `-->`
+- dashed: `-.->`
 
----
-## 5. Comments
-Use `%%` for single-line comments. Comments are ignored by the parser.
+Edge labels use Mermaid flowchart label syntax:
 
-%% This is a comment
-lane Car
-A[Start] %% inline comment on node
-
----
-## 6. Full Syntax Grammar (EBNF sketch)
-This is an informal sketch to guide the `.jison` / `.peggy` grammar implementation.
-
-diagram := "swimlane-lr" NEWLINE (classDef | lane | edge | comment)*
-classDef := "classDef" className styleList
-lane := "lane" laneName [hexColor] NEWLINE INDENT (node | edge | comment)* DEDENT
-node := nodeId shape [":::" className]
-shape := "[" label "]" -- rectangle
-| "{" label "}" -- diamond
-| "((" label "))" -- circle
-| "([" label "])" -- stadium
-label := quoted_string | unquoted_text
-edge := nodeId edgeToken [colorToken] [labelToken] edgeToken nodeId
-edgeToken := "-->" | "-.->" | "--" | "-.-"
-colorToken := "[" hexColor "]"
-labelToken := quoted_string
-hexColor := "#" [0-9a-fA-F]{3,6}
-comment := "%%" text NEWLINE
-
----
-## 7. Layout Engine Notes (ELK)
-The renderer should pass the following hints to ELK:
-- `org.eclipse.elk.partitioning.activate: true`
-- Each node gets `partitionId` = its lane index (0-based, top to bottom)
-- `rankdir: RIGHT` (left-to-right flow within partitions)
-- Node sizes are **pre-measured** from label text before passing to ELK, so ELK receives exact `width` and `height` per node
-- ELK returns `x`, `y` per node → renderer uses these plus lane Y-ranges for final SVG output
----
-## 8. Complete Examples
-### Example 1 — Simple Linear Flow
-
-swimlane-lr
-classDef highlight fill:#fffbe6, stroke:#f0c040
-classDef danger fill:#ffe0e0, stroke:#cc0000
-lane Start #f0f4ff
-A([Begin])
-lane Process #f9f9f9
-B[Collect Data]
-C[Validate Input]:::highlight
-lane Review
-D{Approved?}:::danger
-lane Done #f0fff4
-E((End))
-%% edges
-A --> B --> C --> D
-D -- "Yes" --> E
-D -- "No" --> B
-
----
-### Example 2 — Cross-Lane Flow with Colors and Dashes
-
-swimlane-lr
-classDef critical fill:#ffcccc, stroke:#cc0000, color:#000
-classDef async fill:#e8f4ff, stroke:#4488cc, color:#000
-lane Car
-A[Car Request]
-lane Fun #fff7e6
-F[Fun Activity]
-G((Done))
-lane Sales
-B[Sales Check]
-lane Constr #f0fff4
-C[Construction Start]
-D[Draft Plan]
-H[Submit Plan]
-E[Execute]
-lane Legal #fff0f0
-I{Legal Review?}:::critical
-J[I am a very long label\nthat will wrap to next line\nand this is another line\nand one more line]
-K[Notify Parties]
-L[Final Sign-off]
-M((Complete))
-N[Archive]
-%% main flow
-A --> B --> C --> D --> H
-H --> E
-E --> F --> G
-%% cross-lane legal flow
-H --> I
-I -- "Yes but with a long label\nthat wraps to next line" --> J
-J --[#888888]"No" --> K --> L
-L --> M
-L --> N
-%% loop-back (dashed = async notification)
-J -.-> B
-
----
-### Example 3 — Decision Tree with Styled Edges
-
-swimlane-lr
-classDef terminator fill:#333, stroke:#333, color:#fff
-lane Input #f5f5ff
-S([Start]):::terminator
-Q{Has Account?}
-lane New User #fff9e6
-R[Register]
-V[Verify Email]
-lane Existing User #f0fff4
-L[Login]
-P[Reset Password?]
-lane Core #ffffff
-D[Dashboard]
-E((End)):::terminator
-%% edges
-S --> Q
-Q -- "No" --> R --> V --> D
-Q --[#00aa00]"Yes" --> L
-L --> D
-L -.-[#ff8800]"Forgot password" -> P
-P --> L
-D --> E
-
----
-### Example 4 — Minimal with End Circles
-
-swimlane-lr
-lane Request
-A([Start])
-B[Submit Form]
-lane Approval
-C{Manager Approval}
-lane Outcome #f0fff4
-D((Approved))
-E((Rejected))
+```text
+A --> B
+A -->|Yes| B
+A -.->|Async| B
 A --> B --> C
-C -- "Approved" --> D
-C --[#cc0000]"Rejected" --> E
+```
 
----
-## 9. Design Constraints & Validation Rules
-These should be enforced at parse or semantic analysis time:
-1. **Diamond nodes (decisions) may have at most 2 outgoing edges.** Error if 3+ edges leave a `{}` node.
-2. **Circle nodes (terminals) may have 0 outgoing edges.** Warning if an edge leaves a `(())` node.
-3. **Node IDs must be unique** across all lanes.
-4. **Edge endpoints must reference declared node IDs.** Error if an edge references an unknown ID.
-5. **Lane names must be unique.**
-6. **`classDef` names must be unique.** Last definition wins if duplicated (or error — implementor's choice).
-7. **`[#hexcolor]` must be valid 3 or 6 digit hex.** Error on invalid format.
----
-## 10. SVG Rendering Order
-To ensure correct visual layering:
-1. Draw lane background rectangles (full width, auto height from ELK output)
-2. Draw lane label text (left edge, vertically centered)
-3. Draw lane separator lines (horizontal rules between bands)
-4. Draw edges (lines + arrowheads), with color from edge declaration or theme default
-5. Draw edge labels (small boxes with background fill, centered on edge midpoint)
-6. Draw nodes on top (shapes + text), with fill/stroke from `classDef` or defaults
-7. Draw node labels (centered text inside shape)
----
-## 11. Theme Defaults (when no color is specified)
-| Element | Default |
-|---|---|
-| Lane background | `#ffffff` |
-| Lane label text | `#333333` |
-| Lane separator | `#cccccc` |
-| Node fill | `#ffffff` |
-| Node border | `#333333` |
-| Node text | `#333333` |
-| Edge line | `#333333` |
-| Edge label background | `#f5f5f5` |
-| Edge label text | `#333333` |
-| Arrowhead fill | `#333333` |
+Rules:
+
+- Edges may appear inside a lane block or at the top level.
+- Top-level edges are recommended for cross-lane connections.
+- Edge endpoints must reference declared node IDs.
+- V1 adds no custom inline edge color syntax. Edge styling, if needed, must use Mermaid-supported styling mechanisms from the host Mermaid version.
+
+### 3.5 Ordering Hints
+
+Ordering hints are optional top-level statements that influence relative node order within a lane.
+
+```text
+order Review: C, D, E
+order "Legal Dept": L1, L2
+```
+
+Rules:
+
+- `order <lane-ref>: <node-id>, <node-id>, ...`
+- All listed nodes must exist and belong to the referenced lane.
+- The list sets left-to-right relative order only.
+- Unlisted nodes remain auto-placed by ELK.
+- At most one `order` statement is allowed per lane.
+
+### 3.6 Routing Hints
+
+Routing hints are optional top-level statements that influence which side of a node an edge should leave or enter.
+
+```text
+route C -> D exit:right enter:left
+route L1 -> L2 enter:top
+```
+
+Rules:
+
+- `route <from> -> <to> <route-attr>...`
+- Supported attributes are `exit:<side>` and `enter:<side>`.
+- `<side>` must be one of `left`, `right`, `top`, or `bottom`.
+- A route hint applies to all matching edges from `<from>` to `<to>`.
+- At least one matching edge must exist.
+- At most one route hint is allowed per source-target pair.
+
+### 3.7 Comments and Styling
+
+Comments use Mermaid single-line comment syntax:
+
+```text
+%% comment
+```
+
+Node styling uses Mermaid `classDef` and `:::`:
+
+```text
+classDef decision fill:#fff3cd,stroke:#b7791f,color:#222
+```
+
+Rules:
+
+- `classDef` is diagram-global.
+- Duplicate `classDef` names use last-wins semantics.
+- V1 does not add swimlane-specific class or theme syntax beyond lane `fill:`.
+
+### 3.8 Complete Example
+
+```text
+swimlane-lr
+
+classDef decision fill:#fff3cd,stroke:#b7791f,color:#222
+
+lane Intake fill:#f5f7ff
+  A([Start])
+  B[Collect request]
+end
+
+lane Review fill:#fffaf0
+  C{Approved?}:::decision
+  D[Request changes]
+end
+
+lane Delivery fill:#f0fff4
+  E[Prepare output]
+  F((Done))
+end
+
+order Review: C, D
+
+A --> B --> C
+C -->|Yes| E --> F
+C -->|No| D
+D -.->|Resubmit| B
+
+route C -> E exit:right enter:left
+route D -> B exit:left enter:left
+```
+
+## 4. Mermaid Configuration
+
+The extension must read its diagram-specific config from `swimlaneLr` in Mermaid initialization.
+
+Example:
+
+```js
+mermaid.initialize({
+  swimlaneLr: {
+    wrapWidth: 240,
+    lanePadding: 24,
+    nodeSpacing: 40,
+    rankSpacing: 80,
+    collapsedLanes: []
+  }
+});
+```
+
+Required config keys:
+
+- `wrapWidth`: maximum label width in CSS pixels before auto-wrap
+- `lanePadding`: inner padding around each lane in CSS pixels
+- `nodeSpacing`: minimum spacing between adjacent nodes in the same rank
+- `rankSpacing`: minimum spacing between ranks from left to right
+- `collapsedLanes`: array of lane references that should start collapsed in the viewer
+
+Config rules:
+
+- Unknown config keys are ignored.
+- Unknown lane references in `collapsedLanes` produce a warning and are ignored.
+- Explicit lane `fill:` overrides theme default lane fill.
+- Node, text, stroke, and edge colors otherwise inherit Mermaid theme defaults and `classDef` styling.
+
+## 5. Validation Rules
+
+The parser or semantic validation pass must enforce the following:
+
+1. Diagram declaration must be `swimlane-lr`.
+2. Lane references must be unique.
+3. Node IDs must be unique.
+4. Every node must be declared inside exactly one lane block.
+5. Every edge endpoint must resolve to a declared node.
+6. Decision nodes may have at most two outgoing edges.
+7. Terminal nodes may not have outgoing edges.
+8. `order` references must resolve to an existing lane and nodes in that lane.
+9. `route` references must resolve to an existing source-target edge pair.
+10. Duplicate `order` statements for the same lane are an error.
+11. Duplicate `route` statements for the same source-target pair are an error.
+12. Lane fill values must be valid 3-digit or 6-digit hex colors.
+13. Unsupported V1 constructs must fail with clear errors rather than being silently ignored.
+
+## 6. ELK Layout and Renderer Contract
+
+ELK is mandatory in V1. No alternate layout engine is supported.
+
+Renderer contract:
+
+- Parse the Mermaid source into a diagram model containing lanes, nodes, edges, order hints, route hints, classes, and resolved config.
+- Measure node and edge-label text after wrapping so ELK receives final width and height values.
+- Build an ELK graph using a layered, left-to-right layout.
+- Map each lane to a horizontal partition or container so lane order remains top to bottom.
+- Apply `nodeSpacing` and `rankSpacing` from Mermaid config.
+- Map `order` hints to relative ordering constraints only.
+- Map `route` hints to ELK source/target side constraints only.
+- Use ELK routing to compute the final edge path. The renderer must not hand-author bend points.
+
+Layout rules:
+
+- Lane height is derived from contained node bounds plus `lanePadding`.
+- Lane width spans the full diagram width.
+- Node coordinates always come from ELK output.
+- Edge routing is orthogonal or polyline according to ELK behavior, but must respect lane boundaries and port-side hints where possible.
+- If ELK cannot satisfy a hint, the diagram must still render and the implementation should warn in development mode.
+
+SVG render order:
+
+1. lane backgrounds
+2. lane labels and separators
+3. edges
+4. edge labels
+5. nodes
+6. node labels
+
+Visual requirements:
+
+- Lane labels render in a persistent left gutter and remain visible when the lane is collapsed.
+- Lane separators render between adjacent lanes across the full diagram width.
+- The rendered output must preserve Mermaid class styling on nodes.
+
+## 7. Viewer Requirements
+
+Any embedding that claims `swimlane-lr` V1 support must provide:
+
+- pan
+- zoom
+- fit-to-diagram
+- search across lane labels, node IDs, and node labels
+- focus-jump from a search result to the matched lane or node
+- lane collapse and expand
+- SVG export
+- PNG export
+
+Viewer behavior rules:
+
+- Search must expand the containing lane before focusing a node result.
+- Focus-jump must pan and zoom so the matched item is visible.
+- Collapsing a lane hides its nodes and connected edges from the active view and shrinks the lane to its header height.
+- Expanding a lane restores its contents without changing source order or semantic relationships.
+- Exports must use full diagram bounds, not the current viewport crop.
+- Exports reflect the current collapse state.
+- Minimap, nested collapse, and search-result grouping are not required in V1.
+
+## 8. Mermaid Extension Implementation Boundaries
+
+The implementation should follow Mermaid's standard diagram-module structure:
+
+- parser: recognizes `swimlane-lr`, `lane`, `end`, `order`, and `route`, while reusing Mermaid-compatible node, edge, comment, and `classDef` forms
+- db/model: stores validated lanes, nodes, edges, styling, config, and layout hints
+- renderer: converts the model to ELK input, maps ELK output to SVG, and applies Mermaid theme data
+- styles: supplies lane-specific CSS hooks without breaking Mermaid theme inheritance
+
+If the implementation lives in a fork, these same boundaries still apply.
+
+## 9. Test and Acceptance Plan
+
+Grammar tests:
+
+- parse `lane ... end` blocks
+- parse Mermaid-compatible nodes and labeled edges
+- parse `order` and `route`
+- parse Mermaid init config for `swimlaneLr`
+
+Semantic tests:
+
+- reject duplicate lane references and node IDs
+- reject unresolved edge, `order`, and `route` references
+- enforce decision and terminal node edge rules
+- enforce lane membership for `order`
+
+Rendering tests:
+
+- preserve top-to-bottom lane order
+- preserve relative order from `order`
+- honor route side hints when ELK can satisfy them
+- auto-wrap long labels and size nodes from wrapped text
+- auto-size lane height from content plus padding
+- render cross-lane edges without node overlap
+
+Viewer tests:
+
+- search expands collapsed lanes before focusing a result
+- focus-jump brings the result into view
+- lane collapse hides lane contents and restores them on expand
+- SVG and PNG exports cover the full diagram bounds
+
+Stress acceptance:
+
+- validate with at least one real fixture in the 200-500 node range
+- no node overlaps in the rendered output
+- lane order remains stable
+- interaction and export remain functional on the large fixture
